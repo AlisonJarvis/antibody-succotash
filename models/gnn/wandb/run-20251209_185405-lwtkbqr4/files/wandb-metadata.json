@@ -1,0 +1,13 @@
+{
+  "os": "macOS-15.3-arm64-arm-64bit",
+  "python": "CPython 3.11.14",
+  "startedAt": "2025-12-10T01:54:05.042009Z",
+  "program": "/Users/alisonjarvis/Documents/MSSE/chem_277b/GNN Sweep/gnn_train.py",
+  "codePath": "gnn_train.py",
+  "codePathLocal": "gnn_train.py",
+  "email": "alison_jarvis@berkeley.edu",
+  "root": "/Users/alisonjarvis/Documents/MSSE/chem_277b/GNN Sweep",
+  "host": "Alisons-MacBook-Air.local",
+  "executable": "/Users/alisonjarvis/Documents/MSSE/chem_277b/GNN Tuning/venv/bin/python",
+  "writerId": "mdnma1ddgyvs3n1754gc7j4ugkdn550p"
+}

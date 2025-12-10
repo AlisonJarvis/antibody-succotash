@@ -1,0 +1,37 @@
+{
+  "os": "macOS-15.3-arm64-arm-64bit",
+  "python": "CPython 3.11.14",
+  "startedAt": "2025-12-10T03:07:08.263587Z",
+  "program": "/Users/alisonjarvis/Documents/MSSE/chem_277b/local_final_project/antibody-succotash/models/gnn/gnn_train.py",
+  "codePath": "models/gnn/gnn_train.py",
+  "codePathLocal": "gnn_train.py",
+  "git": {
+    "remote": "https://github.com/AlisonJarvis/antibody-succotash.git",
+    "commit": "26190f64a90aaacc4e075c13b3b47b3f1cd2fbc1"
+  },
+  "email": "alison_jarvis@berkeley.edu",
+  "root": "/Users/alisonjarvis/Documents/MSSE/chem_277b/local_final_project/antibody-succotash/models/gnn",
+  "host": "Alisons-MacBook-Air.local",
+  "executable": "/Users/alisonjarvis/Documents/MSSE/chem_277b/GNN Tuning/venv/bin/python",
+  "cpu_count": 10,
+  "cpu_count_logical": 10,
+  "disk": {
+    "/": {
+      "total": "245107195904",
+      "used": "203818741760"
+    }
+  },
+  "memory": {
+    "total": "17179869184"
+  },
+  "apple": {
+    "name": "Apple M4",
+    "ecpuCores": 6,
+    "pcpuCores": 4,
+    "gpuCores": 8,
+    "memoryGb": 16,
+    "swapTotalBytes": "17179869184",
+    "ramTotalBytes": "17179869184"
+  },
+  "writerId": "irclsqlqknhqe5vbepsg7e18bgkompfa"
+}

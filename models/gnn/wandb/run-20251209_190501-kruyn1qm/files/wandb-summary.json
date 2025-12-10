@@ -1,0 +1,1 @@
+{"test_spearman":0.4841103655734522,"train_loss":0.04959899226509074,"best_test_spearman":0.4883045906667243,"_step":49,"_wandb":{"runtime":285},"train_spearman":0.6621068597022957,"test_loss":0.07578213695647582,"_runtime":285,"_timestamp":1.765332588033257e+09,"epoch":50}

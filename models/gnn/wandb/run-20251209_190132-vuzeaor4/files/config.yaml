@@ -1,0 +1,72 @@
+_wandb:
+    value:
+        cli_version: 0.23.0
+        e:
+            ymugyfg2j8n447l2aayp2yur54cr2pp5:
+                codePath: gnn_train.py
+                codePathLocal: gnn_train.py
+                email: alison_jarvis@berkeley.edu
+                executable: /Users/alisonjarvis/Documents/MSSE/chem_277b/GNN Tuning/venv/bin/python
+                host: Alisons-MacBook-Air.local
+                os: macOS-15.3-arm64-arm-64bit
+                program: /Users/alisonjarvis/Documents/MSSE/chem_277b/GNN Sweep/gnn_train.py
+                python: CPython 3.11.14
+                root: /Users/alisonjarvis/Documents/MSSE/chem_277b/GNN Sweep
+                startedAt: "2025-12-10T02:01:32.617125Z"
+                writerId: ymugyfg2j8n447l2aayp2yur54cr2pp5
+        m: []
+        python_version: 3.11.14
+        t:
+            "1":
+                - 1
+                - 77
+            "2":
+                - 1
+                - 77
+            "3":
+                - 13
+                - 16
+            "4": 3.11.14
+            "5": 0.23.0
+            "12": 0.23.0
+            "13": darwin-arm64
+batch_size:
+    value: 16
+batchnorm:
+    value: true
+conv_type:
+    value: nnconv
+criterion:
+    value: mse
+cutoff:
+    value: 4
+dropout:
+    value: 0.1
+edge_dim:
+    value: 5
+epochs:
+    value: 50
+heads:
+    value: 1
+hidden_dim:
+    value: 64
+input_dim:
+    value: 32
+lr:
+    value: 0.001
+mlp_hidden_dim:
+    value: 128
+num_conv_layers:
+    value: 3
+num_folds:
+    value: 5
+num_mlp_layers:
+    value: 3
+output_dim:
+    value: 1
+pooling:
+    value: mean
+project_name:
+    value: antibody_gnn
+weight_decay:
+    value: 1e-05
