@@ -15,13 +15,17 @@ def get_pdb_and_targets(df, pdb_folder, target):
     return full_path_pdbs, targets
 
 # Load train and test dataset using hierarchical cluster folds
-def load_gnn_train_test(sequences_path, properties_path, pdb_folder, target, fold):
+def load_gnn_train_test(sequences_path, properties_path, emb_path, pdb_folder, target, fold):
 
     # Load sequences and properties, combine into relevant df
     sequences = pd.read_csv(sequences_path)
     properties = pd.read_csv(properties_path)
+    embeddings = pd.read_pickle(emb_path)
     sequences_and_target = pd.merge(sequences[["antibody_id", "hierarchical_cluster_IgG_isotype_stratified_fold"]], 
                                     properties[["antibody_id", target]], left_on="antibody_id", right_on="antibody_id")
+    embeddings = embeddings.reset_index()
+    embeddings.columns = ['antibody_id', 'embeddings']
+    sequences_and_target = pd.merge(sequences_and_target, embeddings,  left_on="antibody_id", right_on="antibody_id")
     train_df = sequences_and_target[~(sequences_and_target['hierarchical_cluster_IgG_isotype_stratified_fold'] == fold)]
     test_df = sequences_and_target[sequences_and_target['hierarchical_cluster_IgG_isotype_stratified_fold'] == fold]
 
@@ -33,7 +37,7 @@ def load_gnn_train_test(sequences_path, properties_path, pdb_folder, target, fol
     train_pdbs, train_targets = get_pdb_and_targets(train_df_clean, pdb_folder, target)
     test_pdbs, test_targets = get_pdb_and_targets(test_df_clean, pdb_folder, target)
 
-    return train_pdbs, train_targets, test_pdbs, test_targets
+    return train_pdbs, train_df['embeddings'], train_targets, test_pdbs, test_df['embeddings'],  test_targets
 
 # Amino acid one hot encoding
 AA_TO_IDX = {
@@ -115,7 +119,7 @@ def pairwise_features(residues, coords):
     return dist, hydro_diff, theta, phi, omega
 
 ########## Graph from pdbs w/ cutoff ##########
-def build_graph(pdb_path, target, cutoff=None):
+def build_graph(pdb_path, residue_embeddings, target, cutoff=None):
 
     # Load residues and coordinates from pdb files
     residues, coords = load_pdb_residues(pdb_path)
@@ -128,6 +132,8 @@ def build_graph(pdb_path, target, cutoff=None):
         idx = AA_TO_IDX.get(aa1, 20)
         x[i, idx] = 1
         x[i, 20] = HYDRO.get(aa1, 0.0)
+    #x = np.hstack([x, residue_embeddings])
+    print(x.shape[0] - residue_embeddings.shape[0])
     x = torch.tensor(x, dtype=torch.float32)
 
     # Builds NxN matrices of pairwise features
@@ -167,14 +173,14 @@ def build_graph(pdb_path, target, cutoff=None):
 
 ###### Antibody Graph class ###########
 class AntibodyGraphDataset(Dataset):
-    def __init__(self, pdb_files, targets, cutoff=None):
+    def __init__(self, pdb_files, residue_embeddings, targets, cutoff=None):
         super().__init__()
         self.cutoff = cutoff
 
         # Precompute all of the graphs once
         self.graphs = []
-        for pdb, target in zip(pdb_files, targets):
-            g = build_graph(pdb, target, cutoff=self.cutoff)
+        for pdb, embeddings, target in zip(pdb_files, residue_embeddings, targets):
+            g = build_graph(pdb, embeddings, target, cutoff=self.cutoff)
             self.graphs.append(g)
 
     def len(self):

@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import wandb
 import torch
 import torch.nn.functional as F
@@ -84,6 +85,12 @@ def use_gdpa1_dataset(run: wandb.Run) -> str:
     csvs_loc = gdpa_dataset.download(parent_dir.as_posix())
     return csvs_loc
 
+def use_embedding_dataset(run: wandb.Run) -> str:
+    embedding_dataset = run.use_artifact("Antibody Succotash/p-IgGen_transformer_embeddings:latest")
+    parent_dir = Path(__file__).parent.absolute()
+    emb_path = embedding_dataset.download(parent_dir.as_posix())
+    return emb_path
+
 ########### Full Cross Validation Loop #################
 def train_cross_validation(config, sequences_path, properties_path, pdb_folder, target):
 
@@ -96,17 +103,23 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
     run = wandb.init(project=config["project_name"],
                 config=config)
 
+    # Load datasets from wandb - both embeddings and base csvs
     use_gdpa1_dataset(run)
+    emb_path = use_embedding_dataset(run)
+    emb_path = os.path.join(emb_path, 'embeddings_sr.pkl')
 
     # Cross validation - for folds 0–4
     for fold in range(5):
 
         print(f"\nFold {fold}\n")
 
-        train_pdbs, train_targets, test_pdbs, test_targets = load_gnn_train_test(sequences_path, properties_path, pdb_folder, target, fold)
+        train_pdbs, train_embeddings, train_targets, test_pdbs,  test_embeddings, test_targets = load_gnn_train_test(sequences_path, properties_path, emb_path, pdb_folder, target, fold)
 
-        train_dataset = AntibodyGraphDataset(train_pdbs, train_targets, cutoff=config["cutoff"])
-        test_dataset = AntibodyGraphDataset(test_pdbs, test_targets, cutoff=config["cutoff"])
+        train_dataset = AntibodyGraphDataset(train_pdbs, train_embeddings, train_targets, cutoff=config["cutoff"])
+        print("train done")
+        test_dataset = AntibodyGraphDataset(test_pdbs, test_embeddings, test_targets, cutoff=config["cutoff"])
+
+        breakpoint()
 
         train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
         test_loader  = DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
