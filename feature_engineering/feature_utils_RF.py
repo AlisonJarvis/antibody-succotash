@@ -4,13 +4,13 @@ from collections import Counter
 from Bio.SeqUtils.ProtParam import ProteinAnalysis
 
 # ---- Constants ----
-HYDROPHOBIC_AA = ['A', 'V', 'I', 'L', 'M', 'F', 'W', 'Y']
+hydrophobic_indices = ['A', 'V', 'I', 'L', 'M', 'F', 'W', 'Y']
 AROMATIC_AA   = ['F', 'Y', 'W']
 POSITIVE_AA = set("KRH")
 NEGATIVE_AA = set("DE")
 POLAR_AA    = set("STNQ")
 SPECIAL_AA  = set("PGC")
-HYDROPHOBIC_SET = set(HYDROPHOBIC_AA)
+HYDROPHOBIC_SET = set(hydrophobic_indices)
 HYDRO_VALUES = {  # Kyte-Doolittle scale
     "A": 1.8, "I": 4.5, "L": 3.8, "M": 1.9, "V": 4.2,
     "F": 2.8, "W": -0.9, "Y": -1.3, "C": 2.5,
@@ -60,7 +60,7 @@ def cdr_basic_features(seq: str, prefix: str) -> dict:
     pa = ProteinAnalysis(seq)
     feats[f"{prefix}_length"] = len(seq)
     feats[f"{prefix}_gravy"] = pa.gravy()
-    feats[f"{prefix}_hydrophobic_count"] = sum(seq.count(a) for a in HYDROPHOBIC_AA)
+    feats[f"{prefix}_hydrophobic_count"] = sum(seq.count(a) for a in hydrophobic_indices)
 
     aromatic_count = sum(seq.count(a) for a in AROMATIC_AA)
     feats[f"{prefix}_aromaticity"] = aromatic_count / len(seq)
@@ -148,7 +148,7 @@ def _chain_features(seq: str, ph: float = 7.0) -> dict:
         }
 
     pa = ProteinAnalysis(seq)
-    hydrophobic_count = sum(seq.count(a) for a in HYDROPHOBIC_AA)
+    hydrophobic_count = sum(seq.count(a) for a in hydrophobic_indices)
     aromatic_count = sum(seq.count(a) for a in AROMATIC_AA)
 
     helix, turn, sheet = pa.secondary_structure_fraction()
@@ -276,12 +276,30 @@ def create_features_from_raw_df(input_df: pd.DataFrame) -> pd.DataFrame:
         - HCDR3_hydrophobic_count, LCDR1_hydrophobic_count
         - HCDR3_aromaticity
         - HCDR3_aromatic_cluster (≥2 consecutive aromatic residues)
+        
+    Additional features included in the RF version (not present in original):
+        Global Fv-level features (fv_*):
+        These aggregate VH and VL into a single Fv sequence and compute hydrophobicity, GRAVY, pI, charge, length, and amino-acid class fractions.
+        
+        Additional VH/VL chain-level features:
+        vh_length, vl_length
+        vh_charge_pH7, vl_charge_pH7
+        Amino-acid class fractions:
+        vh_frac_positive, vh_frac_negative, vh_frac_polar, vh_frac_special
+        vl_frac_positive, vl_frac_negative, vl_frac_polar, vl_frac_special
+        
+        Cross-chain hydrophobicity features:
+        vh_vl_hydrophobicity_gap, vh_vl_hydrophobicity_ratio
+        CDR-level features (HCDR3 & LCDR1)
+        These operate on AHo-aligned sequences and compute:
+        HCDR3_length, LCDR1_length
+        HCDR3_gravy, LCDR1_gravy
+        Hydrophobic and aromaticity metrics
+        HCDR3_aromatic_cluster (aromatic runs ≥ 2)
     """
 
     X = pd.DataFrame(index=input_df.index)
-
-    if "antibody_id" in input_df.columns:
-        X["antibody_id"] = input_df["antibody_id"]
+    X["antibody_id"] = input_df["antibody_id"]
 
     # ------------------------
     # Level 1 — Global Fv
@@ -300,7 +318,7 @@ def create_features_from_raw_df(input_df: pd.DataFrame) -> pd.DataFrame:
 
     # 1-c. Hydrophobic residue count
     X["fv_hydrophobic_count"] = fv_seqs.map(
-        lambda s: sum(s.count(aa) for aa in HYDROPHOBIC_AA)
+        lambda s: sum(s.count(aa) for aa in hydrophobic_indices)
     )
 
     # 1-d. Fv pI
@@ -328,7 +346,7 @@ def create_features_from_raw_df(input_df: pd.DataFrame) -> pd.DataFrame:
         seq_col = f"{chain}_protein_sequence"
         seqs = input_df[seq_col].fillna("").astype(str)
 
-        # length
+        # 2-a. Chain length 
         X[f"{chain}_length"] = seqs.str.len()
 
         # GRAVY / hydrophobic_count / aromaticity / instability / pI / charge / aa fractions
@@ -360,6 +378,7 @@ def create_features_from_raw_df(input_df: pd.DataFrame) -> pd.DataFrame:
 
     # 2-b. VH–VL derived hydrophobicity features (sequence-derived, Fv-level but from chains)
     X["vh_vl_hydrophobicity_gap"] = X["vh_gravy"] - X["vl_gravy"]
+
     X["vh_vl_hydrophobicity_ratio"] = X["vh_hydrophobic_count"] / (
         X["vl_hydrophobic_count"] + 1e-6
     )
@@ -378,7 +397,7 @@ def create_features_from_raw_df(input_df: pd.DataFrame) -> pd.DataFrame:
             for c in aa_df.columns:
                 X[c] = aa_df[c]
 
-            # total length (Allison naming)
+            # total length 
             length_col = f"{col}_length"
             X[length_col] = aa_df.sum(axis=1)
 
