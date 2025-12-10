@@ -1,3 +1,4 @@
+from pathlib import Path
 import wandb
 import torch
 import torch.nn.functional as F
@@ -77,6 +78,12 @@ def evaluate(model, loader, device, loss_type):
 
     return avg_loss, rho
 
+def use_gdpa1_dataset(run: wandb.Run) -> str:
+    gdpa_dataset = run.use_artifact("Antibody Succotash/GDPa_Dataset:latest")
+    parent_dir = Path(__file__).parent.absolute()
+    csvs_loc = gdpa_dataset.download(parent_dir.as_posix())
+    return csvs_loc
+
 ########### Full Cross Validation Loop #################
 def train_cross_validation(config, sequences_path, properties_path, pdb_folder, target):
 
@@ -86,8 +93,10 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
     all_fold_results = []
 
     # Initialize wandb for this fold
-    wandb.init(project=config["project_name"],
+    run = wandb.init(project=config["project_name"],
                 config=config)
+
+    use_gdpa1_dataset(run)
 
     # Cross validation - for folds 0–4
     for fold in range(5):
