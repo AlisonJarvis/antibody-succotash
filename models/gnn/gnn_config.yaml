@@ -1,0 +1,30 @@
+##### Model Hyperparameters #######
+input_dim: 32
+hidden_dim: 64
+num_conv_layers: 3
+conv_type: "genconv"        # options: nnconv, genconv
+edge_dim: 5                 # number of edge attributes
+dropout: 0.1
+batchnorm: true
+heads: 1                    # ignored unless using multi-head layers
+pooling: "add"             # options: mean, max, add
+
+num_mlp_layers: 3
+mlp_hidden_dim: 128
+output_dim: 1
+
+########## Training Hyperparameters ##########
+epochs: 50
+batch_size: 16
+lr: 0.001
+weight_decay: 0.00001
+criterion: "mse"            # options: mse (mean square error), nll (negative log likelihood)
+
+####### Cross-validation settings #######
+num_folds: 5
+
+####### Graph-Specific Hyperparameters ######
+cutoff: 4
+
+########## Wandb params ########
+project_name: "antibody_gnn"
