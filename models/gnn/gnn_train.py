@@ -105,7 +105,7 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
 
         train_pdbs, train_targets, test_pdbs, test_targets = load_gnn_train_test(sequences_path, properties_path, pdb_folder, target, fold)
 
-        train_dataset = AntibodyGraphDataset(train_pdbs, train_targets, cutoff=config["cutoff"])
+        train_dataset = AntibodyGraphDataset(train_pdbs, train_targets, cutoff=config["cutoff"], log_dist=config['log_dist'])
         test_dataset = AntibodyGraphDataset(test_pdbs, test_targets, cutoff=config["cutoff"])
 
         # Automatically determine dimensions
