@@ -138,4 +138,4 @@ class FlexibleGNN(nn.Module):
         x = self.pool(x, batch)
 
         # Returns regression mlp layer
-        return self.mlp(x)
+        return self.mlp(x) + 2.5

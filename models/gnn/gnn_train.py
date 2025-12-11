@@ -108,11 +108,15 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
         train_dataset = AntibodyGraphDataset(train_pdbs, train_targets, cutoff=config["cutoff"])
         test_dataset = AntibodyGraphDataset(test_pdbs, test_targets, cutoff=config["cutoff"])
 
+        # Automatically determine dimensions
+        sample_graph = train_dataset[0]
+        config["input_dim"] = sample_graph.x.shape[1]
+        config["edge_dim"] = sample_graph.edge_attr.shape[1]
+
         train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
         test_loader  = DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
 
         # Create model for this fold
-        config["input_dim"] = train_dataset[0].x.shape[1]
         model = FlexibleGNN(config).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"])
 

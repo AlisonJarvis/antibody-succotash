@@ -60,7 +60,7 @@ three_to_one = {k.upper(): v.upper() for k, v in IUPACData.protein_letters_3to1.
 ######## PDB residue loading ###########
 def load_pdb_residues(pdb_path):
     """
-    Loadd residues and c-alpha coordinates from a pdb file
+    Load residues and c-alpha coordinates from a pdb file
     """
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure("p", pdb_path)
@@ -81,47 +81,43 @@ def load_pdb_residues(pdb_path):
 
 
 ###### Calculates pairwise features #########
-def pairwise_features(residues, coords):
-    """
-    Compute pairwise features for a protein structure.
-    residues: list of 3-letter amino acid codes
-    coords: Nx3 array of alpha-carbon coordinates
-    Returns:
-        dist: NxN distance matrix
-        hydro_diff: NxN hydrophobicity differences
-        theta, phi, omega: NxN orientation angles
-    """
+def pairwise_features(residues, coords, cutoff):
     N = len(residues)
-    
-    # Map 3-letter to 1-letter with fallback X
+
     residues_1 = [three_to_one.get(r, "X") for r in residues]
-    
-    # Hydrophobicity, fallback maps to 0.0
     hydro = np.array([HYDRO.get(r, 0.0) for r in residues_1])
-    
-    # Distance matrix
-    diff = coords[:, None, :] - coords[None, :, :]
+
+    diff = coords[:,None,:] - coords[None,:,:]   # [N,N,3]
     dist = np.linalg.norm(diff, axis=-1)
-    
-    # Hydrophobicity difference
-    hydro_diff = hydro[:, None] - hydro[None, :]
-    
-    # Orientation angles 
-    vx, vy, vz = diff[:, :, 0], diff[:, :, 1], diff[:, :, 2]
+
+    # Normalize distance
+    max_d = cutoff if cutoff is not None else np.max(dist) + 1e-6
+    dist_norm = dist / max_d
+    inv_dist = 1.0 / (dist_norm + 1e-6)
+
+    # Angles
+    vx, vy, vz = diff[...,0], diff[...,1], diff[...,2]
     theta = np.arctan2(vy, vx)
     phi   = np.arctan2(vz, np.sqrt(vx**2 + vy**2))
-    omega = np.arctan2(vz, vx)  # dihedral-like twist
-    
-    return dist, hydro_diff, theta, phi, omega
+    omega = np.arctan2(vz, vx)
+
+    # Sin/cos encode
+    angle_features = np.stack([
+        np.sin(theta), np.cos(theta),
+        np.sin(phi),   np.cos(phi),
+        np.sin(omega), np.cos(omega)
+    ], axis=-1)
+
+    hydro_diff = hydro[:,None] - hydro[None,:]
+
+    return dist_norm, inv_dist, angle_features, hydro_diff
 
 ########## Graph from pdbs w/ cutoff ##########
 def build_graph(pdb_path, target, cutoff=None):
-
-    # Load residues and coordinates from pdb files
     residues, coords = load_pdb_residues(pdb_path)
     N = len(residues)
 
-    # Node features - AA one hot and hydrophobicity
+    # Node features
     x = np.zeros((N, 21), dtype=np.float32)
     for i, aa3 in enumerate(residues):
         aa1 = three_to_one.get(aa3, "X")
@@ -130,39 +126,33 @@ def build_graph(pdb_path, target, cutoff=None):
         x[i, 20] = HYDRO.get(aa1, 0.0)
     x = torch.tensor(x, dtype=torch.float32)
 
-    # Builds NxN matrices of pairwise features
-    dist, hydro_diff, theta, phi, omega = pairwise_features(residues, coords)
+    # Pairwise features
+    dist_norm, inv_dist, angle_features, hydro_diff = pairwise_features(
+        residues, coords, cutoff
+    )
 
-    # Build meshgrid of edge indices
     row, col = np.meshgrid(np.arange(N), np.arange(N))
     row = row.flatten()
     col = col.flatten()
 
-    # Cutoff mask - true when the edge should be kept
-    if cutoff is not None:
-        mask = (dist.flatten() <= cutoff)
-    else:
-        mask = np.ones_like(dist.flatten(), dtype=bool)
+    # Raw distances for cutoff
+    dist_raw = np.linalg.norm(coords[:,None,:] - coords[None,:,:], axis=-1)
+    mask = dist_raw.flatten() <= cutoff if cutoff else np.ones(N*N, dtype=bool)
 
-    # Apply cutoff mask to edge indices
     edge_index = np.vstack([row[mask], col[mask]])
     edge_index = torch.tensor(edge_index, dtype=torch.long)
 
-    # Flatten and stack edge attributes
-    edge_attr_np = np.stack([
-        dist.flatten(),
-        hydro_diff.flatten(),
-        theta.flatten(),
-        phi.flatten(),
-        omega.flatten()], axis=1)
+    # Build edge attributes
+    edge_attr_np = np.concatenate([
+        dist_norm.flatten()[:,None],
+        inv_dist.flatten()[:,None],
+        angle_features.reshape(-1,6),
+        hydro_diff.flatten()[:,None]
+    ], axis=1)
 
-    # Add the edge attributes with cutoff mask applied
     edge_attr = torch.tensor(edge_attr_np[mask], dtype=torch.float32)
 
-    # Target value as torch.tensor
     y = torch.tensor([[target]], dtype=torch.float32)
-
-    # Return as torch geometric Data object
     return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
 
 ###### Antibody Graph class ###########
