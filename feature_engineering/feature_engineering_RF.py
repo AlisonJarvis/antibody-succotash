@@ -685,101 +685,52 @@ print(top_summary_df.to_string(index=False))
 
 
 # ------------------------------------------------------------
-# (EXTRA) V-4. Top-N Optimization (1–25): global R2_mean, rho_mean, rho_std
+# V-4. Compute averaged feature ranks across folds
 # ------------------------------------------------------------
+# 1) Sort by fold and importance (descending) before ranking
+full_importances_ranked = (
+    full_importances
+    .sort_values(["fold", "importance"], ascending=[True, False])
+)
 
-top_n_range = range(1, 26)
+# Rank features within each fold (higher importance → rank 1)
+full_importances_ranked["rank"] = (
+    full_importances_ranked.groupby("fold")["importance"]
+    .rank(method="average", ascending=False)
+)
 
-results_topn = []
+# 2) Compute average rank and average importance across folds
+avg_summary_df = (
+    full_importances_ranked
+    .groupby("feature")
+    .agg(
+        avg_rank=("rank", "mean"),
+        avg_importance=("importance", "mean"),
+        std_importance=("importance", "std"),   # optional: stability measure
+    )
+    .reset_index()
+    .sort_values("avg_rank")   # smaller rank = more consistently important
+)
 
-for top_n in top_n_range:
-    print(f"\n### Evaluating top_n = {top_n} ###")
+print("\n=== Averaged Feature Rank & Importance Across Folds ===")
+print(avg_summary_df.to_string(index=False))
 
-    all_metrics_top = []
-    all_spearman_top = []
-
-    for fold_id in unique_folds:
-
-        # 1) Fold-specific importances
-        fold_imp = (
-            full_importances[full_importances["fold"] == fold_id]
-            .sort_values("importance", ascending=False)
-        )
-
-        # 2) Select top_n features
-        fold_top_features = fold_imp.head(top_n)["feature"].tolist()
-
-        # 3) Train/test split
-        train_df_fold, test_df_fold = split_by_fold(
-            df,
-            target_col="HIC",
-            fold_col="hierarchical_cluster_IgG_isotype_stratified_fold",
-            fold=fold_id,
-        )
-
-        # 4) Train RF
-        rf_top, res_top = train_rf_model_with_fold(
-            train_df_fold,
-            test_df_fold,
-            fold_top_features,
-            target_col="HIC",
-            model_name=f"Full_top{top_n}_fold_specific",
-            fold_id=fold_id,
-        )
-
-        # 5) Spearman evaluation
-        sp_top = compute_spearman_with_fold(
-            rf_top,
-            test_df_fold,
-            fold_top_features,
-            target_col="HIC",
-            model_name=f"Full_top{top_n}_fold_specific",
-            fold_id=fold_id,
-        )
-
-        all_metrics_top.append(res_top)
-        all_spearman_top.append(sp_top)
+# 3) Plotting: Select top features by averaged importance (descending)
+top11 = (
+    avg_summary_df
+    .sort_values("avg_importance", ascending=False)
+    .head(top_n)
+)
 
 
-    # Convert to DataFrames for aggregation
-    metrics_top_df  = pd.DataFrame(all_metrics_top)
-    spearman_top_df = pd.DataFrame(all_spearman_top)
-
-    # Aggregate across folds
-    r2_mean  = metrics_top_df["R2_test"].mean()
-    r2_std   = metrics_top_df["R2_test"].std()
-    rho_mean = spearman_top_df["Spearman_rho_test"].mean()
-    rho_std  = spearman_top_df["Spearman_rho_test"].std()
-
-    # Save results
-    results_topn.append({
-        "top_n": top_n,
-        "R2_mean": r2_mean,
-        "R2_std":  r2_std,
-        "rho_mean": rho_mean,
-        "rho_std": rho_std
-    })
-
-# Convert full results to DF
-results_topn_df = pd.DataFrame(results_topn)
-
-print("\n=== Top-N Optimization Results ===")
-print(results_topn_df)
-
-# ------------------------------------------------------------
-# (EXTRA) V-5. Visualization of Top-N Optimization (global)
-# ------------------------------------------------------------
-
-plt.figure(figsize=(12, 8))
-plt.plot(results_topn_df["top_n"], results_topn_df["R2_mean"], marker='o', label="R2_mean")
-plt.plot(results_topn_df["top_n"], results_topn_df["R2_std"],  marker='o', label="R2_std")
-plt.plot(results_topn_df["top_n"], results_topn_df["rho_mean"], marker='o', label="rho_mean")
-plt.plot(results_topn_df["top_n"], results_topn_df["rho_std"],  marker='o', label="rho_std")
-
-plt.xlabel("Top-N Features")
-plt.ylabel("Metric Value")
-plt.title("Top-N Feature Optimization (1–25)")
-plt.legend()
-plt.grid(True)
+plt.figure(figsize=(8, 5))
+plt.barh(
+    top11["feature"],
+    top11["avg_importance"],
+)
+plt.gca().invert_yaxis()
+plt.title("Random Forest Feature Importances (Top 11)", fontsize=14)
+plt.xlabel("Mean Feature Importance (across folds)", fontsize=12)
 plt.tight_layout()
+plt.savefig("RF_top11_avg_feature_importance.png")
 plt.show()
