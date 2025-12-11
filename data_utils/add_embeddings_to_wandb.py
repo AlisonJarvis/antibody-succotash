@@ -15,6 +15,7 @@ def main():
 
         raw_df = pd.read_csv(Path(csvs_loc).joinpath("GDPa1_v1.2_20250814.csv"))
         embeddings_sr = get_model_embeddings(raw_df)
+        embeddings_sr.index = raw_df['antibody_id']
         embeddings_sr.to_pickle(out_path.as_posix())
 
         artifact.add_file(local_path=out_path.as_posix())
