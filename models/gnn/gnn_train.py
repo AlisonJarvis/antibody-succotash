@@ -6,7 +6,7 @@ from torch_geometric.loader import DataLoader
 from scipy.stats import spearmanr
 import yaml
 from gnn_models import FlexibleGNN
-from gnn_utils import load_gnn_train_test, AntibodyGraphDataset
+from gnn_utils import load_gnn_train_test, AntibodyGraphDataset, ModelEvalTracker
 
 ######## Spearman correlation on torch tensor #########
 def spearman_corr(y_true, y_pred):
@@ -98,6 +98,8 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
 
     use_gdpa1_dataset(run)
 
+    eval_tracker = ModelEvalTracker()
+
     # Cross validation - for folds 0–4
     for fold in range(5):
 
@@ -106,7 +108,7 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
         train_pdbs, train_targets, test_pdbs, test_targets = load_gnn_train_test(sequences_path, properties_path, pdb_folder, target, fold)
 
         train_dataset = AntibodyGraphDataset(train_pdbs, train_targets, cutoff=config["cutoff"], log_dist=config['log_dist'])
-        test_dataset = AntibodyGraphDataset(test_pdbs, test_targets, cutoff=config["cutoff"])
+        test_dataset = AntibodyGraphDataset(test_pdbs, test_targets, cutoff=config["cutoff"], log_dist=config['log_dist'])
 
         # Automatically determine dimensions
         sample_graph = train_dataset[0]
@@ -129,13 +131,16 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
             train_loss, train_rho = train_one_epoch(model, train_loader, optimizer, device, config["criterion"])
             test_loss, test_rho = evaluate(model, test_loader, device, config["criterion"])
 
+            eval_tracker.update_metric(test_rho, fold)
+
             # Log to wandb
             wandb.log({
                 f"fold_{fold}/epoch": epoch,
                 f"fold_{fold}/train_loss": train_loss,
                 f"fold_{fold}/test_loss": test_loss,
                 f"fold_{fold}/train_spearman": train_rho,
-                f"fold_{fold}/test_spearman": test_rho
+                f"fold_{fold}/test_spearman": test_rho,
+                "avg_test_spearman": eval_tracker.cur_metric_avg
             })
 
             print(f"Epoch {epoch} | "

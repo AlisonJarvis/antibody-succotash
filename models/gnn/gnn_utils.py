@@ -191,3 +191,29 @@ def global_mean_max_pool(x, batch,  size=None):
     mean_pool = global_mean_pool(x, batch, size)
     max_pool = global_max_pool(x, batch, size)
     return torch.cat([mean_pool, max_pool], dim=-1)
+
+
+class ModelEvalTracker:
+    def __init__(self):
+        self.last_fold = 0
+        self.last_iteration = 0
+        self.evals = {}
+
+    @property
+    def cur_metric_avg(self):
+        return np.mean(list(self.evals.values()))
+
+    def update_metric(
+        self,
+        test_score: float,
+        fold:int|None=None,
+        iteration:int|None=None
+    ):
+        if fold is None and not iteration is None:
+            raise ValueError("Iteration is changing but fold is not")
+
+        # Update current fold/iteration if provided
+        if fold: self.last_fold = fold
+        if iteration: self.last_iteration = iteration
+        
+        self.evals[(iteration, fold)] = test_score
