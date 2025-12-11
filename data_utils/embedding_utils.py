@@ -1,7 +1,6 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import pandas as pd
-import numpy as np
 from tqdm.auto import tqdm
 
 
@@ -34,7 +33,7 @@ def get_model_embeddings(sequence_df: pd.DataFrame) -> pd.Series:
     device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
     model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
 
-    batch_size = 16
+    batch_size = 1
     full_embeddings = []
     for i in tqdm(range(0, len(sequences), batch_size)):
         batch = tokenizer(sequences[i:i+batch_size], return_tensors="pt", padding=True, truncation=True)
