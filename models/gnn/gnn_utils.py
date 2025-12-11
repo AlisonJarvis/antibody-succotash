@@ -5,6 +5,11 @@ from Bio.Data import IUPACData
 from torch_geometric.data import Data
 import pandas as pd
 from torch_geometric.data import Dataset
+import torch
+from torch_geometric.nn import (
+    global_mean_pool,
+    global_max_pool
+)
 
 # Get lists of pdb files and targets from dataframe
 def get_pdb_and_targets(df, pdb_folder, target):
@@ -172,3 +177,8 @@ class AntibodyGraphDataset(Dataset):
 
     def get(self, idx):
         return self.graphs[idx]
+    
+def global_mean_max_pool(x, batch,  size=None):
+    mean_pool = global_mean_pool(x, batch, size)
+    max_pool = global_max_pool(x, batch, size)
+    return torch.cat([mean_pool, max_pool], dim=-1)
