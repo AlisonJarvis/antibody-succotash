@@ -5,6 +5,15 @@ from Bio.Data import IUPACData
 from torch_geometric.data import Data
 import pandas as pd
 from torch_geometric.data import Dataset
+import torch
+from torch_geometric.nn import (
+    global_mean_pool,
+    global_max_pool
+)
+
+import warnings
+warnings.filterwarnings("ignore", "invalid value encountered in log", append=True)
+warnings.filterwarnings("ignore", "divide by zero encountered in log", append=True)
 
 # Get lists of pdb files and targets from dataframe
 def get_pdb_and_targets(df, pdb_folder, target):
@@ -81,7 +90,7 @@ def load_pdb_residues(pdb_path):
 
 
 ###### Calculates pairwise features #########
-def pairwise_features(residues, coords, cutoff):
+def pairwise_features(residues, coords, cutoff, log_dist=False):
     N = len(residues)
 
     residues_1 = [three_to_one.get(r, "X") for r in residues]
@@ -94,7 +103,11 @@ def pairwise_features(residues, coords, cutoff):
     max_d = cutoff if cutoff is not None else np.max(dist) + 1e-6
     dist_norm = dist / max_d
     inv_dist = 1.0 / (dist_norm + 1e-6)
-
+    if log_dist: # If selected, use log_dist as feature
+        t_dist = np.log(np.ma.array(dist + 1, mask=np.eye(len(dist))))
+        max_d = np.log(cutoff+1) if cutoff is not None else np.max(t_dist)
+        dist_norm = t_dist/max_d
+        np.ma.set_fill_value(dist_norm, 0)
     # Angles
     vx, vy, vz = diff[...,0], diff[...,1], diff[...,2]
     theta = np.arctan2(vy, vx)
@@ -113,7 +126,7 @@ def pairwise_features(residues, coords, cutoff):
     return dist_norm, inv_dist, angle_features, hydro_diff
 
 ########## Graph from pdbs w/ cutoff ##########
-def build_graph(pdb_path, target, cutoff=None):
+def build_graph(pdb_path, target, cutoff=None, log_dist:bool=False):
     residues, coords = load_pdb_residues(pdb_path)
     N = len(residues)
 
@@ -128,7 +141,7 @@ def build_graph(pdb_path, target, cutoff=None):
 
     # Pairwise features
     dist_norm, inv_dist, angle_features, hydro_diff = pairwise_features(
-        residues, coords, cutoff
+        residues, coords, cutoff, log_dist
     )
 
     row, col = np.meshgrid(np.arange(N), np.arange(N))
@@ -157,14 +170,15 @@ def build_graph(pdb_path, target, cutoff=None):
 
 ###### Antibody Graph class ###########
 class AntibodyGraphDataset(Dataset):
-    def __init__(self, pdb_files, targets, cutoff=None):
+    def __init__(self, pdb_files, targets, cutoff=None, log_dist:bool=False):
         super().__init__()
         self.cutoff = cutoff
+        self.log_dist = log_dist
 
         # Precompute all of the graphs once
         self.graphs = []
         for pdb, target in zip(pdb_files, targets):
-            g = build_graph(pdb, target, cutoff=self.cutoff)
+            g = build_graph(pdb, target, cutoff=self.cutoff, log_dist=self.log_dist)
             self.graphs.append(g)
 
     def len(self):
@@ -172,3 +186,43 @@ class AntibodyGraphDataset(Dataset):
 
     def get(self, idx):
         return self.graphs[idx]
+    
+def global_mean_max_pool(x, batch,  size=None):
+    mean_pool = global_mean_pool(x, batch, size)
+    max_pool = global_max_pool(x, batch, size)
+    return torch.cat([mean_pool, max_pool], dim=-1)
+
+
+class ModelEvalTracker:
+    def __init__(self):
+        self.last_fold = 0
+        self.last_iteration = 0
+        self.evals = {}
+
+    @property
+    def cur_metric_avg(self):
+        return np.mean(list(self.evals.values()))
+
+    def update_metric(
+        self,
+        test_score: float,
+        fold:int|None=None,
+        iteration:int|None=None
+    ):
+        if fold is None and not iteration is None:
+            raise ValueError("Iteration is changing but fold is not")
+
+        # Update current fold/iteration if provided
+        if fold: self.last_fold = fold
+        if iteration: self.last_iteration = iteration
+        
+        self.evals[(iteration, fold)] = test_score
+
+def extract_loss_kwargs(config):
+    '''
+        Given a wandb config dict, get any relevant kwargs to feed into the loss function
+    '''
+    loss_type = config['criterion']
+    if loss_type == 'huber':
+        return {'delta': config['huber_delta']}
+    return {}
