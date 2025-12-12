@@ -2,8 +2,8 @@
 input_dim: 32
 hidden_dim: 64
 num_conv_layers: 3
-conv_type: "genconv"         # options: nnconv, genconv
-dropout: 0.1
+conv_type: "mlpgenconv"         # options: nnconv, genconv, mlpgenvconv
+dropout: 0.3
 batchnorm: true
 heads: 1                    # ignored unless using multi-head layers
 pooling: "mean"             # options: mean, max, add, mean-max (see: https://arxiv.org/pdf/1811.01287)
@@ -13,19 +13,19 @@ mlp_hidden_dim: 128
 output_dim: 1
 
 ########## Training Hyperparameters ##########
-epochs: 50
+epochs: 30
 batch_size: 16
 lr: 0.001
 weight_decay: 0.00001
-criterion: "mse"            # options: mse (mean square error), huber
+criterion: "huber"            # options: mse (mean square error), huber
 huber_delta: 0.1              # only used by huber, determines the scale where it transitions from quadratic to linear
 
 ####### Cross-validation settings #######
 num_folds: 5
 
 ####### Edge-Specific Hyperparameters ######
-cutoff: 5
-log_dist: false # if true, take negative log of normalized dist
+cutoff: 8
+log_dist: true # if true, take negative log of normalized dist
 
 ########## Wandb params ########
 project_name: "antibody_gnn"
