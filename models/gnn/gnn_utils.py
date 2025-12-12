@@ -104,9 +104,10 @@ def pairwise_features(residues, coords, cutoff, log_dist=False):
     dist_norm = dist / max_d
     inv_dist = 1.0 / (dist_norm + 1e-6)
     if log_dist: # If selected, use log_dist as feature
-        t_dist = np.log(np.ma.array(dist + 1, mask=np.eye(len(dist))))
-        max_d = np.log(cutoff+1) if cutoff is not None else np.max(t_dist)
-        dist_norm = t_dist/max_d
+        t_dist = np.log(np.ma.array(dist, mask=np.eye(len(dist))))
+        max_d = np.log(cutoff) if cutoff is not None else np.max(t_dist)
+        min_d = np.min(t_dist)
+        dist_norm = (t_dist-min_d)/(max_d-min_d)
         np.ma.set_fill_value(dist_norm, 0)
     # Angles
     vx, vy, vz = diff[...,0], diff[...,1], diff[...,2]
@@ -126,7 +127,7 @@ def pairwise_features(residues, coords, cutoff, log_dist=False):
     return dist_norm, inv_dist, angle_features, hydro_diff
 
 ########## Graph from pdbs w/ cutoff ##########
-def build_graph(pdb_path, target, cutoff=None, log_dist:bool=False):
+def build_graph(pdb_path, target, cutoff=None, log_dist:bool=False, use_inv_dist:bool=False, self_loops:bool=False):
     residues, coords = load_pdb_residues(pdb_path)
     N = len(residues)
 
@@ -148,21 +149,26 @@ def build_graph(pdb_path, target, cutoff=None, log_dist:bool=False):
     row = row.flatten()
     col = col.flatten()
 
-    # Raw distances for cutoff
+    # Construct pairwise edge mask
     dist_raw = np.linalg.norm(coords[:,None,:] - coords[None,:,:], axis=-1)
-    mask = dist_raw.flatten() <= cutoff if cutoff else np.ones(N*N, dtype=bool)
+    mask = (
+        (dist_raw.flatten() <= cutoff if cutoff else np.ones(N*N, dtype=bool))
+    )
+    if not self_loops: # Remove self loops
+        mask = mask & (dist_raw.flatten() > 0)
 
     edge_index = np.vstack([row[mask], col[mask]])
     edge_index = torch.tensor(edge_index, dtype=torch.long)
 
     # Build edge attributes
-    edge_attr_np = np.concatenate([
+    edge_attr_list = [
         dist_norm.flatten()[:,None],
-        inv_dist.flatten()[:,None],
         angle_features.reshape(-1,6),
         hydro_diff.flatten()[:,None]
-    ], axis=1)
-
+    ]
+    if use_inv_dist:
+        edge_attr_list.append(inv_dist.flatten()[:,None])
+    edge_attr_np = np.concatenate(edge_attr_list, axis=1)
     edge_attr = torch.tensor(edge_attr_np[mask], dtype=torch.float32)
 
     y = torch.tensor([[target]], dtype=torch.float32)
