@@ -1,6 +1,7 @@
 import torch
 import logging
 
+
 logger = logging.Logger(__name__)
 file_handler = logging.FileHandler('cnn_model.txt', mode='a')
 file_handler.setLevel(logging.DEBUG)
@@ -17,13 +18,25 @@ class ConvolutionLayer(torch.nn.Module):
         stride=2,
         kernel_size=6,
         n_layers = 2,
-        use_residuals = False
+        use_residuals = False,
+        use_norm = False
     ):
         if n_layers < 1:
             raise ValueError("Must have at least 1 convolution layer")
         self.use_residuals = use_residuals
+        self.use_norm = use_norm
 
         super().__init__()
+        self.required_padding = 0
+        if self.use_residuals:
+            assert stride==1, "Residuals need stride=1"
+            if not (kernel_size % 2):
+                kernel_size += 1
+            self.required_padding = (kernel_size-1)/2
+
+        if self.use_norm:
+            self.norm = torch.nn.LazyBatchNorm1d()
+
         self.conv_layer_first = torch.nn.Sequential(
             *[
             torch.nn.LazyConv1d(
@@ -43,6 +56,7 @@ class ConvolutionLayer(torch.nn.Module):
                         in_channels=channels,
                         out_channels=channels,
                         kernel_size=kernel_size,
+                        padding=int(self.required_padding),
                         stride=stride
                     ),
                     torch.nn.Dropout(dropout),
@@ -57,13 +71,15 @@ class ConvolutionLayer(torch.nn.Module):
 
     def forward(self, input):
         if self.use_residuals:
-            x = input + self.conv_layer_first(input)
+            x = self.conv_layer_first(input)
             for layer in self.conv_layers_remaining:
                 x = layer(x) + x
         else:
             x = self.conv_layer_first(input)
             for layer in self.conv_layers_remaining:
                 x = layer(x)   
+        if self.use_norm:
+            x = self.norm(x)
         x = self.pooling_layer(x)
         return x         
 
@@ -74,7 +90,9 @@ class ConvModelFullVector(torch.nn.Module):
         channels_log=3,
         n_conv_layers=2,
         kernel_size=6,
-        stride=2
+        stride=2,
+        residuals=False,
+        norm_layer=False
     ):
         # Handle case where channels_log < n_conv_layers
         if n_conv_layers > channels_log:
@@ -96,7 +114,9 @@ class ConvModelFullVector(torch.nn.Module):
                     dropout=dropout,
                     kernel_size=kernel_size,
                     stride=stride,
-                    channels=self.channels//(2**i) # Halve channel size each time
+                    channels=self.channels//(2**i), # Halve channel size each time
+                    use_residuals=residuals,
+                    use_norm=norm_layer,
                     )
                 for i in range(n_conv_layers)
             ]

@@ -17,9 +17,11 @@ sweep_configuration = {
     "metric": {"goal": "maximize", "name": "spearman"},
     "parameters": {
         "lr": {"max": 1e-2, "min": 1e-7, "distribution": "log_uniform_values"},
-        "epochs": {"max": 50, "min": 5, "distribution": "int_uniform"},
+        "epochs": {"max": 200, "min": 10, "distribution": "int_uniform"},
         "model_params": {
             "parameters": {
+                "norm_layer": {"values":[True, False]},
+                "residuals": {"values": [True]},
                 "dropout": {"max": 0.5, "min": 0, "distribution": "uniform"},
                 "kernel_size": {"max":9, "min": 6, "distribution": "int_uniform"},
                 "stride": {"value": 1, "distribution":"constant"},

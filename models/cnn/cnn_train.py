@@ -79,7 +79,10 @@ def test_loop(dataloader, model, loss_fn, train_data, ctx: TrainContext):
         gravy = data['gravy'].to(device)
         pred = model(X, subtypes, gravy)
         test_loss += loss_fn(y, pred[:, 0], pred[:, 1])
-        spearman.append(sp.stats.spearmanr(y.cpu().detach().numpy(), pred.cpu().detach().numpy()[:, 0]).statistic)
+        try:
+            spearman.append(sp.stats.spearmanr(y.cpu().detach().numpy(), pred.cpu().detach().numpy()[:, 0]).statistic)
+        except Exception:
+            spearman.append(-1)
     
     y_pred_train = (
         torch.squeeze(
