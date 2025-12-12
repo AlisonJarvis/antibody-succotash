@@ -5,11 +5,46 @@ import torch.nn.functional as F
 from torch_geometric.nn import (
     NNConv,
     GENConv,
+    MLP,
     global_mean_pool,
     global_add_pool,
     global_max_pool
 )
+from torch_geometric.nn.aggr import Aggregation
 from gnn_utils import global_mean_max_pool
+from typing import Union, Optional
+
+class NNGENConv(GENConv):
+    def __init__(       
+        self,
+        in_channels: Union[int, tuple[int, int]],
+        out_channels: int,
+        aggr: Optional[Union[str, list[str], Aggregation]] = 'softmax',
+        t: float = 1.0,
+        learn_t: bool = False,
+        p: float = 1.0,
+        learn_p: bool = False,
+        msg_norm: bool = False,
+        learn_msg_scale: bool = False,
+        norm: str = 'batch',
+        num_layers: int = 2,
+        expansion: int = 2,
+        eps: float = 1e-7,
+        bias: bool = False,
+        edge_dim: Optional[int] = None,
+        edge_nn = MLP,
+        edge_nn_kwargs: dict = {"num_layers": 2, "hidden_channels": 32},
+        **kwargs
+    ):
+        super().__init__(in_channels, out_channels, aggr, t, learn_t, p, learn_p, msg_norm, learn_msg_scale, norm, num_layers, expansion, eps, bias, edge_dim, **kwargs)
+        if edge_nn is not None:
+            self.lin_edge = edge_nn(
+                in_channels=edge_dim,
+                out_channels=out_channels,
+                bias=bias,
+                **edge_nn_kwargs
+            )
+
 
 ########## Function to build convolution layer ###########
 def build_conv_layer(conv_type, in_dim, out_dim, edge_dim=None):
@@ -31,6 +66,22 @@ def build_conv_layer(conv_type, in_dim, out_dim, edge_dim=None):
         )
 
     ######## GENConv ##########
+    elif conv_type == "mlpgenconv":
+        # Define the GENConv layer
+        # GENConv handles edge attributes automatically if passed in
+        return NNGENConv(
+            in_dim,
+            out_dim,
+            aggr='softmax',          # tends to be best for molecular type graphs
+            t=1.0,                   # temperature parameter
+            learn_t=True,            # learnable temperature
+            learn_p=True,            # learnable power for message normalization
+            msg_norm=True,
+            norm='layer',
+            learn_msg_scale=True,
+            edge_dim=edge_dim        # tells GENConv how to use edges
+        )
+    ######## GENConv ##########
     elif conv_type == "genconv":
         # Define the GENConv layer
         # GENConv handles edge attributes automatically if passed in
@@ -42,12 +93,14 @@ def build_conv_layer(conv_type, in_dim, out_dim, edge_dim=None):
             learn_t=True,            # learnable temperature
             learn_p=True,            # learnable power for message normalization
             msg_norm=True,
+            norm='layer',
+            learn_msg_scale=True,
             edge_dim=edge_dim        # tells GENConv how to use edges
         )
 
     else:
         raise ValueError(
-            f"Unknown conv_type '{conv_type}', currently only recognizes 'nnconv' or 'genconv'."
+            f"Unknown conv_type '{conv_type}', currently only recognizes 'nnconv', 'genconv' or 'mlpgenconv'."
         )
 
 
