@@ -95,8 +95,13 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
     all_fold_results = []
 
     # Initialize wandb for this fold
-    run = wandb.init(project=config["project_name"],
-                config=config)
+    run = wandb.init(
+        project=config["project_name"],
+        config=config,
+        settings=wandb.Settings(code_dir=".")
+    )
+
+    run.log_code(".")
 
     use_gdpa1_dataset(run)
 
