@@ -217,3 +217,12 @@ class ModelEvalTracker:
         if iteration: self.last_iteration = iteration
         
         self.evals[(iteration, fold)] = test_score
+
+def extract_loss_kwargs(config):
+    '''
+        Given a wandb config dict, get any relevant kwargs to feed into the loss function
+    '''
+    loss_type = config['criterion']
+    if loss_type == 'huber':
+        return {'delta': config['huber_delta']}
+    return {}

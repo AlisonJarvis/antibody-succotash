@@ -6,7 +6,7 @@ from torch_geometric.loader import DataLoader
 from scipy.stats import spearmanr
 import yaml
 from gnn_models import FlexibleGNN
-from gnn_utils import load_gnn_train_test, AntibodyGraphDataset, ModelEvalTracker
+from gnn_utils import load_gnn_train_test, AntibodyGraphDataset, ModelEvalTracker, extract_loss_kwargs
 
 ######## Spearman correlation on torch tensor #########
 def spearman_corr(y_true, y_pred):
@@ -18,7 +18,7 @@ def spearman_corr(y_true, y_pred):
     return spearmanr(y_true, y_pred)[0]
 
 ############# Training Loop ##################
-def train_one_epoch(model, loader, optimizer, device, loss_type):
+def train_one_epoch(model, loader, optimizer, device, loss_type, loss_kwargs={}):
     model.train()
     total_loss = 0
     preds = []
@@ -31,8 +31,10 @@ def train_one_epoch(model, loader, optimizer, device, loss_type):
         out = model(batch.x, batch.edge_index, batch.batch, batch.edge_attr)
         if loss_type == 'mse':
             loss = F.mse_loss(out.squeeze(), batch.y.squeeze())
-        elif loss_type == 'nll':
-            loss = F.nll_loss(out.squeeze(), batch.y.squeeze())
+        elif loss_type == 'huber':
+            loss = F.huber_loss(out.squeeze(), batch.y.squeeze(), **loss_kwargs)
+        else:
+            raise ValueError("loss must be one of 'mse', 'huber'")
         loss.backward()
         optimizer.step()
 
@@ -50,7 +52,7 @@ def train_one_epoch(model, loader, optimizer, device, loss_type):
 
 ################ Validation Loop ######################
 @torch.no_grad()
-def evaluate(model, loader, device, loss_type):
+def evaluate(model, loader, device, loss_type, loss_kwargs={}):
     model.eval()
     total_loss = 0
     preds = []
@@ -63,8 +65,8 @@ def evaluate(model, loader, device, loss_type):
         # Define loss type
         if loss_type == 'mse':
             loss = F.mse_loss(out.squeeze(), batch.y.squeeze())
-        elif loss_type == 'nll':
-            loss = F.nll_loss(out.squeeze(), batch.y.squeeze())
+        elif loss_type == 'huber':
+            loss = F.huber_loss(out.squeeze(), batch.y.squeeze(), **loss_kwargs)
 
         total_loss += loss.item() * batch.num_graphs
         preds.append(out.detach().cpu())
@@ -127,9 +129,11 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
 
         # Training loop
         for epoch in range(1, config["epochs"] + 1):
-
-            train_loss, train_rho = train_one_epoch(model, train_loader, optimizer, device, config["criterion"])
-            test_loss, test_rho = evaluate(model, test_loader, device, config["criterion"])
+            
+            # Get kwargs for loss function
+            loss_kwargs = extract_loss_kwargs(config)
+            train_loss, train_rho = train_one_epoch(model, train_loader, optimizer, device, config["criterion"], loss_kwargs)
+            test_loss, test_rho = evaluate(model, test_loader, device, config["criterion"], loss_kwargs)
 
             eval_tracker.update_metric(test_rho, fold)
 

@@ -17,7 +17,8 @@ epochs: 50
 batch_size: 16
 lr: 0.001
 weight_decay: 0.00001
-criterion: "mse"            # options: mse (mean square error), nll (negative log likelihood)
+criterion: "mse"            # options: mse (mean square error), huber
+huber_delta: 0.1              # only used by huber, determines the scale where it transitions from quadratic to linear
 
 ####### Cross-validation settings #######
 num_folds: 5
