@@ -104,10 +104,9 @@ def pairwise_features(residues, coords, cutoff, log_dist=False):
     dist_norm = dist / max_d
     inv_dist = 1.0 / (dist_norm + 1e-6)
     if log_dist: # If selected, use log_dist as feature
-        t_dist = np.log(log_dist)
+        t_dist = np.log(dist_norm)
         max_d = np.log(cutoff) if cutoff is not None else np.max(t_dist) + 1e-6
         dist_norm = t_dist
-
     # Angles
     vx, vy, vz = diff[...,0], diff[...,1], diff[...,2]
     theta = np.arctan2(vy, vx)
