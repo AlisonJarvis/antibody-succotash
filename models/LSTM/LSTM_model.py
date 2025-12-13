@@ -195,7 +195,7 @@ def run_epoch(loader, train=True):
 
     return avg_loss, spearman
 
-
+results = []
 for test_fold in range(5):
 
     
@@ -245,4 +245,13 @@ for test_fold in range(5):
             f"train ρ: {train_rho:.3f} | "
             f"val ρ: {val_rho:.3f}"
         )
+        results.append({
+            "fold": test_fold,
+            "epoch": epoch,
+            "train_spearman": train_rho,
+            "val_spearman": val_rho,
+        })
     print(f"Finished running Fold #{test_fold}")
+
+results_df = pd.DataFrame(results)
+results_df.to_csv("models/LSTM/lstm_results.csv", index=False)
