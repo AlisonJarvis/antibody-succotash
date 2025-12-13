@@ -6,7 +6,7 @@ The project investigates whether antibody VH/VL sequences can be used to predict
 ## Project Overview
 This project focuses on learning relationships between antibody sequence information and experimentally measured hydrophobicity.
 Machine-learning models are trained to predict HIC values from antibody sequences using either engineered physicochemical descriptors or learned sequence representations.
-The primary goal is to rank antibodies by relative hydrophobicity risk, rather than to precisely predict absolute values.
+The primary goal is to rank antibodies by relative hydrophobicity, rather than to precisely predict absolute values.
 
 ## Repository Structure
 ```
