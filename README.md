@@ -15,6 +15,7 @@ The primary goal is to rank antibodies by relative hydrophobicity, rather than t
 ├── feature_engineering/     # notebooks and scripts for feature construction
 ├── models/                  # model implementations
 ├── tests/                   # basic unit tests
+├── sandbox/                 # exploratory notebooks and scratch work
 └── requirements.txt         # Python dependencies
 ```
 
