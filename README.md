@@ -10,7 +10,7 @@ The primary goal is to rank antibodies by relative hydrophobicity risk, rather t
 
 ## Repository Structure
 ```
-├── data/                    # raw CSV files and data logging scripts
+├── data/                    # raw CSV files and input datasets
 ├── data_utils/              # shared utilities (features, embeddings, scoring)
 ├── feature_engineering/     # notebooks and scripts for feature construction
 ├── models/                  # model implementations
