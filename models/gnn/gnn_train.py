@@ -6,7 +6,7 @@ from torch_geometric.loader import DataLoader
 from scipy.stats import spearmanr
 import yaml
 from gnn_models import FlexibleGNN
-from gnn_utils import load_gnn_train_test, AntibodyGraphDataset
+from gnn_utils import load_gnn_train_test, AntibodyGraphDataset, ModelEvalTracker, extract_loss_kwargs
 
 ######## Spearman correlation on torch tensor #########
 def spearman_corr(y_true, y_pred):
@@ -18,7 +18,7 @@ def spearman_corr(y_true, y_pred):
     return spearmanr(y_true, y_pred)[0]
 
 ############# Training Loop ##################
-def train_one_epoch(model, loader, optimizer, device, loss_type):
+def train_one_epoch(model, loader, optimizer, device, loss_type, loss_kwargs={}):
     model.train()
     total_loss = 0
     preds = []
@@ -31,8 +31,10 @@ def train_one_epoch(model, loader, optimizer, device, loss_type):
         out = model(batch.x, batch.edge_index, batch.batch, batch.edge_attr)
         if loss_type == 'mse':
             loss = F.mse_loss(out.squeeze(), batch.y.squeeze())
-        elif loss_type == 'nll':
-            loss = F.nll_loss(out.squeeze(), batch.y.squeeze())
+        elif loss_type == 'huber':
+            loss = F.huber_loss(out.squeeze(), batch.y.squeeze(), **loss_kwargs)
+        else:
+            raise ValueError("loss must be one of 'mse', 'huber'")
         loss.backward()
         optimizer.step()
 
@@ -50,7 +52,7 @@ def train_one_epoch(model, loader, optimizer, device, loss_type):
 
 ################ Validation Loop ######################
 @torch.no_grad()
-def evaluate(model, loader, device, loss_type):
+def evaluate(model, loader, device, loss_type, loss_kwargs={}):
     model.eval()
     total_loss = 0
     preds = []
@@ -63,8 +65,8 @@ def evaluate(model, loader, device, loss_type):
         # Define loss type
         if loss_type == 'mse':
             loss = F.mse_loss(out.squeeze(), batch.y.squeeze())
-        elif loss_type == 'nll':
-            loss = F.nll_loss(out.squeeze(), batch.y.squeeze())
+        elif loss_type == 'huber':
+            loss = F.huber_loss(out.squeeze(), batch.y.squeeze(), **loss_kwargs)
 
         total_loss += loss.item() * batch.num_graphs
         preds.append(out.detach().cpu())
@@ -98,6 +100,8 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
 
     use_gdpa1_dataset(run)
 
+    eval_tracker = ModelEvalTracker()
+
     # Cross validation - for folds 0–4
     for fold in range(5):
 
@@ -105,14 +109,18 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
 
         train_pdbs, train_targets, test_pdbs, test_targets = load_gnn_train_test(sequences_path, properties_path, pdb_folder, target, fold)
 
-        train_dataset = AntibodyGraphDataset(train_pdbs, train_targets, cutoff=config["cutoff"])
-        test_dataset = AntibodyGraphDataset(test_pdbs, test_targets, cutoff=config["cutoff"])
+        train_dataset = AntibodyGraphDataset(train_pdbs, train_targets, cutoff=config["cutoff"], log_dist=config['log_dist'])
+        test_dataset = AntibodyGraphDataset(test_pdbs, test_targets, cutoff=config["cutoff"], log_dist=config['log_dist'])
+
+        # Automatically determine dimensions
+        sample_graph = train_dataset[0]
+        config["input_dim"] = sample_graph.x.shape[1]
+        config["edge_dim"] = sample_graph.edge_attr.shape[1]
 
         train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
         test_loader  = DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
 
         # Create model for this fold
-        config["input_dim"] = train_dataset[0].x.shape[1]
         model = FlexibleGNN(config).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"])
 
@@ -121,9 +129,13 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
 
         # Training loop
         for epoch in range(1, config["epochs"] + 1):
+            
+            # Get kwargs for loss function
+            loss_kwargs = extract_loss_kwargs(config)
+            train_loss, train_rho = train_one_epoch(model, train_loader, optimizer, device, config["criterion"], loss_kwargs)
+            test_loss, test_rho = evaluate(model, test_loader, device, config["criterion"], loss_kwargs)
 
-            train_loss, train_rho = train_one_epoch(model, train_loader, optimizer, device, config["criterion"])
-            test_loss, test_rho = evaluate(model, test_loader, device, config["criterion"])
+            eval_tracker.update_metric(test_rho, fold)
 
             # Log to wandb
             wandb.log({
@@ -131,7 +143,8 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
                 f"fold_{fold}/train_loss": train_loss,
                 f"fold_{fold}/test_loss": test_loss,
                 f"fold_{fold}/train_spearman": train_rho,
-                f"fold_{fold}/test_spearman": test_rho
+                f"fold_{fold}/test_spearman": test_rho,
+                "avg_test_spearman": eval_tracker.cur_metric_avg
             })
 
             print(f"Epoch {epoch} | "

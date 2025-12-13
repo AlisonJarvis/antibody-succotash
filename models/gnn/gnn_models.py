@@ -9,6 +9,7 @@ from torch_geometric.nn import (
     global_add_pool,
     global_max_pool
 )
+from gnn_utils import global_mean_max_pool
 
 ########## Function to build convolution layer ###########
 def build_conv_layer(conv_type, in_dim, out_dim, edge_dim=None):
@@ -80,8 +81,10 @@ class FlexibleGNN(nn.Module):
             self.pool = global_max_pool
         elif pooling == "add":
             self.pool = global_add_pool
+        elif pooling == "mean-max":
+            self.pool = global_mean_max_pool
         else:
-            raise ValueError("pooling must be 'mean', 'max', or 'add'")
+            raise ValueError("pooling must be 'mean', 'max', 'add', or 'mean-max'")
 
         # Define dropout, batchnorm, and convolution type parameters
         self.dropout = nn.Dropout(dropout)
@@ -107,6 +110,9 @@ class FlexibleGNN(nn.Module):
         # Build the mlp -> regression block
         mlp = []
         mlp_in = hidden_dim
+        # Account for mean-max pool doubling output dim through concatenation
+        if pooling == "mean-max":
+            mlp_in *= 2
 
         # Create mlp layers, each has linear, relu, dropout
         for _ in range(mlp_layers - 1):
@@ -138,4 +144,4 @@ class FlexibleGNN(nn.Module):
         x = self.pool(x, batch)
 
         # Returns regression mlp layer
-        return self.mlp(x)
+        return self.mlp(x) + 2.5
