@@ -49,14 +49,13 @@ In this project, RF is the primary setting where features are explicitly organiz
 LSTM models treat antibody sequences as ordered amino-acid chains and learn representations directly from sequence order.
 They are used to capture long-range dependencies that may influence hydrophobicity, particularly when combined with learned embeddings.
 
-### CNN
-CNN models focus on learning local sequence patterns from residue-level representations using convolution and pooling operations.
-This approach is well-suited for identifying short-range motifs that contribute to hydrophobic behavior.
-
 ### GNN
-The GNN directory is reserved for models that aim to capture non-local relationships between residues beyond sequence order.
-Specific implementations may be added as the project evolves.
+GNN models aim to capture non-local interactions between residues that arise from the three-dimensional structure of antibodies.
+By representing antibodies as graphs derived from predicted structures, this approach incorporates spatial relationships that are not accessible from sequence-based models alone.
 
+### CNN
+CNN models learn local sequence patterns from residue-level embeddings using convolution and pooling operations.
+Multiple architectures and training hyperparameters were evaluated using cross-validation to assess how local sequence motifs contribute to hydrophobic behavior.
 
 ## Notes
 Model evaluation emphasizes rank-based performance metrics, particularly Spearman correlation, using predefined cross-validation folds.Each model directory may include additional documentation specific to that approach.
