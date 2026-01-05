@@ -7,6 +7,9 @@ from scipy.stats import spearmanr
 import yaml
 from gnn_models import FlexibleGNN
 from gnn_utils import load_gnn_train_test, AntibodyGraphDataset, ModelEvalTracker, extract_loss_kwargs
+import os
+
+os.environ['PYTORCH_ENABLE_MPS_FALLBACK']='1'
 
 ######## Spearman correlation on torch tensor #########
 def spearman_corr(y_true, y_pred):
@@ -28,11 +31,11 @@ def train_one_epoch(model, loader, optimizer, device, loss_type, loss_kwargs={})
         batch = batch.to(device)
         optimizer.zero_grad()
 
-        out = model(batch.x, batch.edge_index, batch.batch, batch.edge_attr)
+        out = model(batch.x, batch.edge_index, batch.batch, batch.edge_attr, batch.subtype)
         if loss_type == 'mse':
-            loss = F.mse_loss(out.squeeze(), batch.y.squeeze())
+            loss = F.mse_loss(out.squeeze().flatten(), batch.y.squeeze().flatten())
         elif loss_type == 'huber':
-            loss = F.huber_loss(out.squeeze(), batch.y.squeeze(), **loss_kwargs)
+            loss = F.huber_loss(out.squeeze().flatten(), batch.y.squeeze().flatten(), **loss_kwargs)
         else:
             raise ValueError("loss must be one of 'mse', 'huber'")
         loss.backward()
@@ -46,7 +49,11 @@ def train_one_epoch(model, loader, optimizer, device, loss_type, loss_kwargs={})
     trues = torch.cat(trues).squeeze()
 
     avg_loss = total_loss / len(loader.dataset)
-    rho = spearman_corr(trues, preds)
+    # Handle case where we're only fitting one property
+    if trues.ndim == 1:
+        trues = trues.reshape(-1, 1)
+        preds = preds.reshape(-1, 1)
+    rho = spearman_corr(trues[:, 0], preds[:, 0])
 
     return avg_loss, rho
 
@@ -61,12 +68,12 @@ def evaluate(model, loader, device, loss_type, loss_kwargs={}):
     # Iterate through each batch
     for batch in loader:
         batch = batch.to(device)
-        out = model(batch.x, batch.edge_index, batch.batch, batch.edge_attr)
+        out = model(batch.x, batch.edge_index, batch.batch, batch.edge_attr, batch.subtype)
         # Define loss type
         if loss_type == 'mse':
             loss = F.mse_loss(out.squeeze(), batch.y.squeeze())
         elif loss_type == 'huber':
-            loss = F.huber_loss(out.squeeze(), batch.y.squeeze(), **loss_kwargs)
+            loss = F.huber_loss(out.squeeze().flatten(), batch.y.squeeze().flatten(), **loss_kwargs)
 
         total_loss += loss.item() * batch.num_graphs
         preds.append(out.detach().cpu())
@@ -76,9 +83,17 @@ def evaluate(model, loader, device, loss_type, loss_kwargs={}):
     trues = torch.cat(trues).squeeze()
 
     avg_loss = total_loss / len(loader.dataset)
-    rho = spearman_corr(trues, preds)
+     # Handle case where we're only fitting one property
+    if trues.ndim == 1:
+        trues = trues.reshape(-1, 1)
+        preds = preds.reshape(-1, 1)
+    rhos = [
+        spearman_corr(trues[:, i], preds[:, i])
+        for i in range(trues.shape[1])
+    ]
+    print(rhos)
 
-    return avg_loss, rho
+    return avg_loss, rhos[0]
 
 def use_gdpa1_dataset(run: wandb.Run) -> str:
     gdpa_dataset = run.use_artifact("Antibody Succotash/GDPa_Dataset:latest")
@@ -90,7 +105,8 @@ def use_gdpa1_dataset(run: wandb.Run) -> str:
 def train_cross_validation(config, sequences_path, properties_path, pdb_folder, target):
 
     # Define the device (mps or cpu)
-    device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
+    #device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
+    device = 'cpu'
 
     all_fold_results = []
 
@@ -112,22 +128,24 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
 
         print(f"\nFold {fold}\n")
 
-        train_pdbs, train_targets, test_pdbs, test_targets = load_gnn_train_test(sequences_path, properties_path, pdb_folder, target, fold)
-
-        train_dataset = AntibodyGraphDataset(train_pdbs, train_targets, cutoff=config["cutoff"], log_dist=config['log_dist'])
-        test_dataset = AntibodyGraphDataset(test_pdbs, test_targets, cutoff=config["cutoff"], log_dist=config['log_dist'])
+        train_pdbs, train_targets, test_pdbs, test_targets, train_subtypes, test_subtypes = load_gnn_train_test(sequences_path, properties_path, pdb_folder, target, fold)
+        train_dataset = AntibodyGraphDataset(train_pdbs, train_targets, train_subtypes, cutoff=config["cutoff"], log_dist=config['log_dist'])
+        test_dataset = AntibodyGraphDataset(test_pdbs, test_targets, test_subtypes, cutoff=config["cutoff"], log_dist=config['log_dist'])
 
         # Automatically determine dimensions
         sample_graph = train_dataset[0]
         config["input_dim"] = sample_graph.x.shape[1]
         config["edge_dim"] = sample_graph.edge_attr.shape[1]
 
-        train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
-        test_loader  = DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True, num_workers=4)
+        test_loader  = DataLoader(test_dataset,  batch_size=config["batch_size"], shuffle=False, num_workers=4)
 
         # Create model for this fold
         model = FlexibleGNN(config).to(device)
+        #model.compile()
+        #model = torch.compile(model, backend="aot_eager")
         optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"])
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, config["epochs"])
 
         best_test_rho = -999
         best_model_state = None
@@ -154,7 +172,9 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
 
             print(f"Epoch {epoch} | "
                   f"train_loss={train_loss:.4f}, test_loss={test_loss:.4f} | "
-                  f"train_rho={train_rho:.3f}, test_rho={test_rho:.3f}")
+                  #f"train_rho_hic={train_rho[0]:.3f}, test_rho_hic={test_rho[0]:.3f} | "
+                  f"train_rho_tm2={train_rho:.3f}, test_rho_tm2={test_rho:.3f} | "
+            )
 
             # Select best model by highest test spearman rho
             if test_rho > best_test_rho:
@@ -164,6 +184,8 @@ def train_cross_validation(config, sequences_path, properties_path, pdb_folder, 
         # Out of epoch loop - get best test spearman rho as eval metric
         wandb.summary["best_test_spearman"] = best_test_rho
         all_fold_results.append(best_test_rho)
+
+        scheduler.step()
 
         # Save best model for this fold
         torch.save(best_model_state, f"best_model_fold{fold}.pt")
@@ -185,8 +207,9 @@ if __name__ == '__main__':
     # Data loading parameters
     sequences_path = './GDPa1_v1.2_sequences.csv'
     properties_path = './GDPa1_v1.2_20250814.csv'
-    pdb_folder = './pdb_files/'
-    target = 'HIC'
+    pdb_folder = '`./pdb_files/'
+    target = ['Tm2']#, 'Tm1', 'HIC', 'Titer', 'PR_CHO']
+    config['output_dim'] = len(target)
 
     # Run cross-validation
     train_cross_validation(config, sequences_path, properties_path, pdb_folder, target)

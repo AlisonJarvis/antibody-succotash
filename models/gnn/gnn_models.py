@@ -1,18 +1,25 @@
 # Imports
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from torch_geometric.nn import (
     NNConv,
     GENConv,
     MLP,
     global_mean_pool,
     global_add_pool,
-    global_max_pool
+    global_max_pool,
+    LayerNorm,
+    GraphNorm,
+    TopKPooling,
+    SAGPooling,
+    DeepSetsAggregation
 )
 from torch_geometric.nn.aggr import Aggregation
 from gnn_utils import global_mean_max_pool
 from typing import Union, Optional
+
+torch._dynamo.config.capture_scalar_outputs = True
 
 class NNGENConv(GENConv):
     def __init__(       
@@ -33,7 +40,7 @@ class NNGENConv(GENConv):
         bias: bool = False,
         edge_dim: Optional[int] = None,
         edge_nn = MLP,
-        edge_nn_kwargs: dict = {"num_layers": 2, "hidden_channels": 32},
+        edge_nn_kwargs: dict = {"num_layers": 3, "hidden_channels": 32, "dropout": 0.3},
         **kwargs
     ):
         super().__init__(in_channels, out_channels, aggr, t, learn_t, p, learn_p, msg_norm, learn_msg_scale, norm, num_layers, expansion, eps, bias, edge_dim, **kwargs)
@@ -116,6 +123,7 @@ class FlexibleGNN(nn.Module):
         in_dim        = config["input_dim"] # input dimension
         hidden_dim    = config.get("hidden_dim", 64) # hidden dimension
         conv_layers   = config.get("num_conv_layers", 3) # convolutional layers
+        unique_conv   = config.get("unique_conv_per_layer", True) # if a different conv layer should be use per convolution
         conv_type     = config.get("conv_type", "nnconv") # convolutional type
         edge_dim      = config.get("edge_dim", None) # edge dimension
         dropout       = config.get("dropout", 0.0) # dropout
@@ -138,25 +146,53 @@ class FlexibleGNN(nn.Module):
             self.pool = global_mean_max_pool
         else:
             raise ValueError("pooling must be 'mean', 'max', 'add', or 'mean-max'")
+        
+        self.pool = DeepSetsAggregation(
+            local_nn=MLP(
+                in_channels=hidden_dim,
+                out_channels=hidden_dim,
+                hidden_channels=32,
+                num_layers=2,
+                dropout=dropout
+            ),
+            global_nn=MLP(
+                in_channels=hidden_dim,
+                out_channels=hidden_dim,
+                hidden_channels=32,
+                num_layers=2,
+                dropout=dropout
+            )
+        )
 
         # Define dropout, batchnorm, and convolution type parameters
         self.dropout = nn.Dropout(dropout)
         self.use_batchnorm = use_batchnorm
+        self.n_convs = conv_layers
         self.conv_type = conv_type.lower()
+        self.unique_conv = unique_conv
 
         # Sets convolutional layers
         self.convs = nn.ModuleList()
         self.bns   = nn.ModuleList()
+        self.pooler = SAGPooling(in_dim, min_score=0.4, multiplier=0.1)
+
+        # If using unique layers, create conv_layers layers
+        # otherwise, we just need 1
+        if self.unique_conv:
+            n_convs = conv_layers
+        else:
+            n_convs = 1
 
         # Actually builds up convolution layers with correct dimensions
         prev_dim = in_dim
-        for _ in range(conv_layers):
+        for _ in range(n_convs):
             conv = build_conv_layer(conv_type, prev_dim, hidden_dim, edge_dim)
             self.convs.append(conv)
 
             # Define whether to use batchnorm for each layer
             if use_batchnorm:
-                self.bns.append(nn.BatchNorm1d(hidden_dim))
+                #self.bns.append(nn.BatchNorm1d(hidden_dim))
+                self.bns.append(GraphNorm(hidden_dim))
 
             prev_dim = hidden_dim
 
@@ -166,8 +202,11 @@ class FlexibleGNN(nn.Module):
         # Account for mean-max pool doubling output dim through concatenation
         if pooling == "mean-max":
             mlp_in *= 2
+        # Account for subtypes
+        mlp_in += 5
 
         # Create mlp layers, each has linear, relu, dropout
+        mlp.append(nn.LayerNorm(mlp_in))
         for _ in range(mlp_layers - 1):
             mlp.append(nn.Linear(mlp_in, mlp_hidden))
             mlp.append(nn.ReLU())
@@ -179,22 +218,44 @@ class FlexibleGNN(nn.Module):
         self.mlp = nn.Sequential(*mlp)
 
     ########### GNN forward pass ##################
-    def forward(self, x, edge_index, batch, edge_attr):
+    def forward(self, x, edge_index, batch, edge_attr, subtype):
+
+        readout = None
         
         # Iterate through convolution layers
-        for i, conv in enumerate(self.convs):
+        for i in range(self.n_convs):
+            if self.unique_conv:
+                conv = self.convs[i]
+            else:
+                conv = self.convs[0]
             # Actual convolution layer (NNConv or GENConv)
             x = conv(x, edge_index, edge_attr)
-            # ReLU layer
-            x = F.relu(x)
             # Batchnorm, if using normalization
             if self.use_batchnorm:
-                x = self.bns[i](x)
+                if self.unique_conv:
+                    #x = self.bns[i](x)
+                    x = self.bns[i](x, batch)
+                else:
+                    #x = self.bns[0](x)
+                    x = self.bns[0](x, batch)
+
+            # Pooling layer
+            if (i + 1) % 3 == 0:
+                x, edge_index, edge_attr, batch, _, _ = self.pooler(x, edge_index, edge_attr, batch)
+
+                if readout is None:
+                    readout = self.pool(x, batch)
+                else:
+                    readout += self.pool(x, batch)
             # Dropout layer
-            x = self.dropout(x)
+            #x = self.dropout(x)
 
         # Pooling - converts variable numbers of nodes to graph embedding (fixed size)
-        x = self.pool(x, batch)
+        #x = self.pool(x, batch)
+        if not isinstance(readout, torch.Tensor):
+            raise ValueError("readout was never initialized")
+
+        graph_encoding = torch.cat([readout, subtype], dim=-1)
 
         # Returns regression mlp layer
-        return self.mlp(x) + 2.5
+        return self.mlp(graph_encoding)
