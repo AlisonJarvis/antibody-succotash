@@ -105,8 +105,13 @@ def use_gdpa1_dataset(run: wandb.Run) -> str:
 def train_cross_validation(config, sequences_path, properties_path, pdb_folder, target):
 
     # Define the device (mps or cpu)
-    #device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
-    device = 'cpu'
+    device = (
+        torch.device("cuda") if torch.cuda.is_available() else
+        torch.device("mps") if torch.backends.mps.is_available() else
+        torch.device("cpu")
+    )
+
+    print("Using device: ", device)
 
     all_fold_results = []
 
@@ -205,9 +210,9 @@ if __name__ == '__main__':
         config = yaml.safe_load(f)
 
     # Data loading parameters
-    sequences_path = './GDPa1_v1.2_sequences.csv'
-    properties_path = './GDPa1_v1.2_20250814.csv'
-    pdb_folder = '`./pdb_files/'
+    sequences_path = os.path.join('.', 'GDPa1_v1.2_sequences.csv')
+    properties_path = os.path.join('.', 'GDPa1_v1.2_20250814.csv')
+    pdb_folder = os.path.join('.', 'pdb_files')
     target = ['Tm2']#, 'Tm1', 'HIC', 'Titer', 'PR_CHO']
     config['output_dim'] = len(target)
 

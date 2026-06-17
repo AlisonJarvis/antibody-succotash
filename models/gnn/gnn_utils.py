@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 from Bio.PDB import PDBParser
@@ -35,7 +37,7 @@ def get_pdb_and_targets(df, pdb_folder, target, target_scaler=MinMaxScaler()):
     is_train_data = model_is_fitted(target_scaler)
 
     antibody_ids = df['antibody_id']
-    full_path_pdbs = [(pdb_folder + ab_id + '.pdb') for ab_id in antibody_ids]
+    full_path_pdbs = [os.path.join(pdb_folder, ab_id + '.pdb') for ab_id in antibody_ids]
 
     if is_train_data:
         scaled_targets = target_scaler.transform(df[target])
