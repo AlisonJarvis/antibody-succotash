@@ -1,0 +1,58 @@
+parameters:
+  ##### Model Hyperparameters #######
+  hidden_dim: {"value": 64}
+  num_conv_layers: {"values": [2, 3, 4]}
+  conv_type: {"values": ["nnconv", "genconv"]} # options: nnconv, genconv
+  dropout:
+    min: 0
+    max: 0.5
+    distribution: "uniform"
+  batchnorm: {"value": true}
+  heads: {"value": 1}                    # ignored unless using multi-head layers
+  pooling: {"values": ["mean", "mean-max"]}             # options: mean, max, add, mean-max (see: https://arxiv.org/pdf/1811.01287)
+
+  num_mlp_layers: {"value": 3}
+  mlp_hidden_dim: {"value": 128}
+  output_dim: {"value": 1}
+
+  ########## Training Hyperparameters ##########
+  epochs:
+    value:
+      50
+  batch_size:
+    value:
+      16
+  lr:
+    min: 0.00001
+    max: 0.01
+    distribution: log_uniform_values
+  weight_decay: 
+    max: 0.0001
+    min: 0.00000000000001
+    distribution: log_uniform_values
+  criterion: {"value": "huber"}            # options: mse (mean square error), huber
+  huber_delta:
+    min: 0
+    max: 0.2
+    distribution: uniform     # only used by huber, determines the scale where it transitions from quadratic to linear
+
+  ####### Cross-validation settings #######
+  num_folds: {"value": 5}
+
+  ####### Edge-Specific Hyperparameters ######
+  cutoff: {"values": [5, 8]}
+  log_dist:
+    values: [true, false] # if true, take negative log of normalized dist
+
+method: "bayes"
+metric:
+  name: "avg_test_spearman"
+  goal: "maximize"
+early_terminate: {
+  "type": "hyperband",
+  "min_iter": 1,
+  "eta": 2,
+}
+
+########## Wandb params ########
+program: "gnn_train.py"
